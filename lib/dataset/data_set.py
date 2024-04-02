@@ -117,7 +117,7 @@ class RoadAnomaly(Dataset):
     trainid_to_color = {label.train_id: label.color for label in labels}
     label_name_to_id = {label.name: label.id for label in labels}
 
-    def __init__(self, root='../../data/final_dataset/road_anomaly', transform=None):
+    def __init__(self, root='./data/final_dataset/road_anomaly', transform=None):
         """Load all filenames."""
         self.transform = transform
         self.root = root
@@ -174,7 +174,7 @@ class RoadAnomaly21(Dataset):
     trainid_to_color = {label.train_id: label.color for label in labels}
     label_name_to_id = {label.name: label.id for label in labels}
 
-    def __init__(self, root='../../data/dataset_AnomalyTrack', transform=None):
+    def __init__(self, root='./data/final_dataset/dataset_AnomalyTrack', transform=None):
         """Load all filenames."""
         self.transform = transform
         self.root = root
@@ -238,7 +238,7 @@ class RoadObstacle21(Dataset):
     trainid_to_color = {label.train_id: label.color for label in labels}
     label_name_to_id = {label.name: label.id for label in labels}
 
-    def __init__(self, root='../../data/dataset_ObstacleTrack', transform=None):
+    def __init__(self, root='./data/final_dataset/dataset_ObstacleTrack', transform=None):
         """Load all filenames."""
         self.transform = transform
         self.root = root

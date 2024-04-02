@@ -8,6 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 import wget
 from lib.network.deepv3 import DeepWV3Plus, DeepR101V3PlusD_OS8_v2
+from lib.lucas import mymethods
 
 
 def random_init(seed=0):
@@ -104,7 +105,8 @@ def build_model(backbone, class_num=19, parallel=True, weight_path=None):
         return None
 
 def build_pebal_model(backbone, class_num=19, parallel=True, weight_path=None):
-    weight_path = '../PEBAL/ckpts/pebal/best_ad_ckpt.pth'
+    weight_path = './pretrained_models/best_ad_ckpt.pth'
+    feature_maps = {}
 
     # Choose model and weight path.
     if backbone == 'WideResNet38':
@@ -122,7 +124,7 @@ def build_pebal_model(backbone, class_num=19, parallel=True, weight_path=None):
         name = k.split('branch1.')[-1]
         new_state_dict[name] = v
 
-    error_message =  model.load_state_dict(new_state_dict, strict=False)
+    error_message = model.load_state_dict(new_state_dict, strict=False)
     print(error_message)
 
     # Use data parallel by default.
@@ -135,3 +137,5 @@ def build_pebal_model(backbone, class_num=19, parallel=True, weight_path=None):
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
+
+

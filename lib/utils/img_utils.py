@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as trans
-from lib.utils.corruption_utils import fog
+#from lib.utils.corruption_utils import fog
 
 class Compose(object):
     """Wraps together multiple image augmentations.

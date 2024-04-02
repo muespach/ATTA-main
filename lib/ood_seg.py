@@ -268,7 +268,7 @@ class OOD_Model(object):
     """
     Functions related to BN-based domain shift detection.
     """
-
+    ################### BN
     def get_domainshift_prob(self, x, threshold = 50.0, beta = 0.1, epsilon = 1e-8):
         # Perform forward propagation
         self.method.anomaly_score(x)
