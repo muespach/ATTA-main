@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import wget
 import torch.nn.functional as F
+import torch.nn as nn
 
 class Max_logit:
     def __init__(self, backbone = 'WideResNet38', weight_path = None, class_num = 19):
@@ -46,9 +47,10 @@ class Energy:
 """
 Reimplementation for PEBAL (ECCV 2021)
 """
-class PEBAL:
-    def __init__(self, backbone = 'WideResNet38',  weight_path = None, class_num = 19,):
-        self.model = build_pebal_model(backbone = backbone,  class_num = class_num+1)
+class PEBAL(nn.Module):
+    def __init__(self, backbone='WideResNet38', weight_path=None, class_num=19):
+        super(PEBAL, self).__init__()  # Initialize the base class
+        self.model = build_pebal_model(backbone=backbone, class_num=class_num+1)
         self.class_num = class_num
         self.gaussian_smoothing = transforms.GaussianBlur(7, sigma=1)
 
@@ -58,7 +60,7 @@ class PEBAL:
         anomaly_score = self.gaussian_smoothing(anomaly_score)
         return anomaly_score
 
-    def anomaly_score(self, image, ret_logit = False):
+    def anomaly_score(self, image, ret_logit=False):
         logit = self.model(image)
 
         anomaly_score = self.getscore_from_logit(logit)
@@ -67,8 +69,6 @@ class PEBAL:
         in_logit = logit[:, :self.class_num]
 
         if ret_logit:
-            return  anomaly_score, in_logit
+            return anomaly_score, in_logit
 
         return anomaly_score
-
-
