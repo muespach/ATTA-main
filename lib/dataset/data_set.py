@@ -29,7 +29,7 @@ class Fishyscapes(Dataset):
     trainid_to_color = {label.train_id: label.color for label in labels}
     label_name_to_id = {label.name: label.id for label in labels}
 
-    def __init__(self, split='Static', root='../../data/final_dataset/fs_', transform=None, domain_shift = False, inlier_label = False):
+    def __init__(self, split='Static', root='./data/final_dataset/fs_', transform=None, domain_shift = False, inlier_label = False):
         """Load all filenames."""
         self.transform = transform
         self.root = root
@@ -45,7 +45,7 @@ class Fishyscapes(Dataset):
         else:
             print("Not defined split")
         filenames = sorted(os.listdir(os.path.join(root,'original')))
-        match_dict = np.load('../../data/final_dataset/fs_static/match.npy', allow_pickle=True)
+        #match_dict = np.load('./data/final_dataset/fs_static/match.npy', allow_pickle=True)
         for filename in filenames:
             if os.path.splitext(filename)[1] == '.png':
                 f_name = os.path.splitext(filename)[0]
@@ -57,7 +57,7 @@ class Fishyscapes(Dataset):
                 self.images.append(os.path.join(root, filename_base_img + '.png'))
                 self.targets.append(os.path.join(root, filename_base_labels + '.png'))
                 if inlier_label:
-                    self.labels.append(os.path.join( '../../data/cityscapes/gtFine/val/frankfurt/',
+                    self.labels.append(os.path.join( './data/cityscapes/gtFine/val/frankfurt/',
                                                      filename_base_semantics.replace("leftImg8bit",'gtFine_labelTrainIds')))
 
         self.domain_shift = domain_shift
@@ -353,7 +353,7 @@ class Cityscapes(Dataset):
     id2label = {label.id: label for label in labels}
     train_id2label = {label.train_id: label for label in labels}
 
-    def __init__(self, root: str = '../../data/cityscapes', split: str = "val", mode: str = "gtFine_labelIds",
+    def __init__(self, root: str = './data/final_dataset/cityscapes_processed', split: str = "val", mode: str = "gtFine_labelIds",
                  target_type: str = "semantic_train_id", transform: Optional[Callable] = None,
                  predictions_root: Optional[str] = None) -> None:
         """
