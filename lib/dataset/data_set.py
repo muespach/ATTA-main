@@ -37,7 +37,7 @@ class Fishyscapes(Dataset):
         self.images = []  # list of all raw input images
         self.targets = []  # list of all ground truth TrainIds images
         self.labels = []
-        self.inlier_label = inlier_label
+        self.inlier_label = False
         if split == 'Static':
             root = root + 'static'
         elif split == 'LostAndFound':
@@ -57,7 +57,7 @@ class Fishyscapes(Dataset):
                 self.images.append(os.path.join(root, filename_base_img + '.png'))
                 self.targets.append(os.path.join(root, filename_base_labels + '.png'))
                 if inlier_label:
-                    self.labels.append(os.path.join( './data/cityscapes/gtFine/val/frankfurt/',
+                    self.labels.append(os.path.join( './data/final_dataset/cityscapes_processed/gtFine/val/frankfurt/',
                                                      filename_base_semantics.replace("leftImg8bit",'gtFine_labelTrainIds')))
 
         self.domain_shift = domain_shift

@@ -32,16 +32,19 @@ if __name__ == '__main__':
     skip_connection = False
     patch_size = 10
     for name, module in method.named_modules():
+        #print("Layer: ", name, " Module: ", module)
         print(name)
         if name == 'model':
             module.register_forward_hook(mymethods.get_input)
-        if "conv1" in name or "conv2" in name:
+        if "conv1" in name or "conv2" in name or "conv3" in name:
             last_conv = name
-            #module.register_forward_hook(functools.partial(mymethods.get_feature_maps, layer_name=name))
-            module.register_forward_hook(functools.partial(mymethods.get_patch_stats, layer_name=name, patch_size = patch_size))
         if "bn" in name and ".0" in name:
+            # Hook the input to calculate the patch stats
             training_stats['mean'][name] = module.running_mean.cpu().numpy()
             training_stats['var'][name] = module.running_var.cpu().numpy()
+            module.register_forward_hook(
+                functools.partial(mymethods.get_patch_stats, layer_name=name, patch_size=patch_size,training_stats=training_stats))
+            # Save the training statistics
             stats = mymethods.save_training_stats(module, name, last_conv)
             batchnorm_stats.append(stats)
 
@@ -52,11 +55,7 @@ if __name__ == '__main__':
     run_fn = getattr(ood, args.run)
     run_fn()
 
-    #mymethods.save_images()
-    #mymethods.save_patch_stats()
-
-    kl_div = mymethods.compare_stats(training_stats, df_batchnorm_stats, save=True)
-
-    #mymethods.save_feature_maps()
+    mymethods.save_images()
+    mymethods.save_kl_div()
 
 

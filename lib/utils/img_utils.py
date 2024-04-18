@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as trans
-#from lib.utils.corruption_utils import fog
+from lib.utils.corruption_utils import fog
 
 class Compose(object):
     """Wraps together multiple image augmentations.
@@ -24,6 +24,7 @@ class Compose(object):
         """Returns images that are augmented with the given augmentations."""
         # img, mask = Image.fromarray(img, mode='RGB'), Image.fromarray(mask, mode='L')
         assert img.size == mask.size
+        #print(self.augmentations)
         for a in self.augmentations:
             img, mask, inputs = a(img, mask, *inputs)
         return (img, mask, *inputs)
@@ -54,7 +55,8 @@ class Distortion(object):
         if random.random() < 0.5:
             tensor = self.color_jitter(tensor)
         else:
-            tensor = fog(tensor).astype(np.float32)#, severity=0
+            #tensor = fog(tensor).astype(np.float32)#, severity=0
+            tensor = self.color_jitter(tensor)
 
         return tensor, mask, tuple(i for i in inputs)
 

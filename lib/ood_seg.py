@@ -34,8 +34,8 @@ class OOD_Model(object):
 
         self.data_loaders ={
             'test': DataLoader(self.build_dataset(trans_type=trans_type), batch_size=opt.train.test_batch, drop_last=False,
-                                num_workers=opt.data.num_workers, shuffle=False, pin_memory=True)}
-        self.method = method
+                                num_workers=0, shuffle=False, pin_memory=True)}
+        self.method = method    #num_workers=opt.data.num_workers
         self.best = {}
 
     """

@@ -8,6 +8,7 @@ patch_feature_maps = {
     'std': {}
 }
 input_images = []
+kl_divs = {}
 
 
 def get_feature_maps(module, input, output, layer_name):
@@ -20,11 +21,40 @@ def get_patch_stats(module, input, output, layer_name, patch_size):
     if layer_name not in patch_feature_maps:
         patch_feature_maps['mean'][layer_name] = []
         patch_feature_maps['std'][layer_name] = []
-    patch_feature_map = fold_to_patches(output.detach().cpu(), patch_size)
+    patch_feature_map = fold_to_patches(input[0].detach().cpu(), patch_size)
     patch_means, patch_stds = calculate_stats(patch_feature_map)
     patch_feature_maps['mean'][layer_name].append(patch_means[0].detach().cpu().numpy())
     patch_feature_maps['std'][layer_name].append(patch_stds[0].detach().cpu().numpy())
     #print('feature patch type and shape:',type(patch_feature_maps['std'][layer_name][0]),np.shape(patch_feature_maps['std'][layer_name][0]))
+
+
+def get_patch_stats(module, input, output, layer_name, patch_size, training_stats):
+    global patch_feature_maps
+    if layer_name not in patch_feature_maps:
+        patch_feature_maps['mean'][layer_name] = []
+        patch_feature_maps['std'][layer_name] = []
+    patch_feature_map = fold_to_patches(input[0].detach().cpu(), patch_size)
+    patch_means, patch_stds = calculate_stats(patch_feature_map)
+    patch_feature_maps['mean'][layer_name].append(patch_means[0].detach().cpu().numpy())
+    patch_feature_maps['std'][layer_name].append(patch_stds[0].detach().cpu().numpy())
+    compare_stats_hook(training_stats, patch_feature_maps, layer_name)
+    #print('feature patch type and shape:',type(patch_feature_maps['std'][layer_name][0]),np.shape(patch_feature_maps['std'][layer_name][0]))
+
+
+def compare_stats_hook(training_stats, feature_maps, bn_layer):
+    global kl_divs
+    #print(bn_layer)
+    # Dynamically reshape based on the first dimension of training_stats['mean'][layer]
+    first_dimension_size = training_stats['mean'][bn_layer].shape[0]
+    reshaped_train_mean = training_stats['mean'][bn_layer].reshape((first_dimension_size, 1, 1))
+    reshaped_train_std = np.sqrt(training_stats['var'][bn_layer]).reshape((first_dimension_size, 1, 1))
+
+    kl_div = kl_divergence(patch_feature_maps['mean'][bn_layer][0], patch_feature_maps['std'][bn_layer][0],
+                                  reshaped_train_mean, reshaped_train_std)
+
+    if bn_layer not in kl_divs:
+        kl_divs[bn_layer] = []
+    kl_divs[bn_layer].append(kl_div)
 
 
 def get_input(module, input, output):
@@ -93,19 +123,25 @@ def kl_divergence(mu_p, sigma_p, mu_q, sigma_q):
     return kl_div
 
 
-def compare_stats(training_stats, batchnorm_stats_df, save = False):
-    kl_div = {}
+def compare_stats(training_stats, batchnorm_stats_df):
+    global kl_divs
     for layer in batchnorm_stats_df['Last Convolution Layer']:
+        #print(layer)
         bn_layer = batchnorm_stats_df[batchnorm_stats_df['Last Convolution Layer'] == layer]['Layer Name'].iloc[0]
         # Dynamically reshape based on the first dimension of training_stats['mean'][layer]
         first_dimension_size = training_stats['mean'][bn_layer].shape[0]
         reshaped_train_mean = training_stats['mean'][bn_layer].reshape((first_dimension_size, 1, 1))
         reshaped_train_std = np.sqrt(training_stats['var'][bn_layer]).reshape((first_dimension_size, 1, 1))
 
-        kl_div[layer] = kl_divergence(patch_feature_maps['mean'][layer][0], patch_feature_maps['std'][layer][0],
+        kl_div = kl_divergence(patch_feature_maps['mean'][layer][0], patch_feature_maps['std'][layer][0],
                                       reshaped_train_mean, reshaped_train_std)
 
-        if save:
-            np.save(f'./saved_data/kl/kl_div_{layer}', kl_div[layer])
+        if layer not in kl_divs:
+            kl_divs[layer] = []
+        kl_divs[layer].append(kl_div)
 
-    return kl_div
+
+def save_kl_div():
+    global kl_divs
+    for layer in kl_divs:
+        np.save(f'./saved_data/kl/kl_div_{layer}', kl_divs[layer])
