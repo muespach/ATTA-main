@@ -15,25 +15,12 @@ def get_feature_maps(module, input, output, layer_name):
     global feature_maps
     feature_maps[layer_name] = output.detach().cpu()
 
-
-def get_patch_stats(module, input, output, layer_name, patch_size):
-    global patch_feature_maps
-    if layer_name not in patch_feature_maps:
-        patch_feature_maps['mean'][layer_name] = []
-        patch_feature_maps['std'][layer_name] = []
-    patch_feature_map = fold_to_patches(input[0].detach().cpu(), patch_size)
-    patch_means, patch_stds = calculate_stats(patch_feature_map)
-    patch_feature_maps['mean'][layer_name].append(patch_means[0].detach().cpu().numpy())
-    patch_feature_maps['std'][layer_name].append(patch_stds[0].detach().cpu().numpy())
-    #print('feature patch type and shape:',type(patch_feature_maps['std'][layer_name][0]),np.shape(patch_feature_maps['std'][layer_name][0]))
-
-
 def get_patch_stats(module, input, output, layer_name, patch_size, training_stats):
     global patch_feature_maps
     if layer_name not in patch_feature_maps:
         patch_feature_maps['mean'][layer_name] = []
         patch_feature_maps['std'][layer_name] = []
-    patch_feature_map = fold_to_patches(input[0].detach().cpu(), patch_size)
+    patch_feature_map = fold_to_patches_uniform(input[0].detach().cpu(), patch_size)
     patch_means, patch_stds = calculate_stats(patch_feature_map)
     patch_feature_maps['mean'][layer_name].append(patch_means[0].detach().cpu().numpy())
     patch_feature_maps['std'][layer_name].append(patch_stds[0].detach().cpu().numpy())
@@ -67,9 +54,11 @@ def save_images():
         np.save(f'./saved_data/input_images/image_{idx}', image.numpy())
 
 
-def fold_to_patches(feature_map, patch_size):
-    # B, C, H, W = feature_map.shape
-    patches = feature_map.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+def fold_to_patches_uniform(feature_map, patch_division):
+    B, C, H, W = feature_map.shape
+    div_h = H // patch_division[0]
+    div_w = W // patch_division[1]
+    patches = feature_map.unfold(2, div_h, div_w).unfold(3, div_h, div_w)
     patches = patches.contiguous()
     # shape of patches at this point: (B, C, H//patch size, W//patch size, patch size, patch size)
     return patches
@@ -92,6 +81,7 @@ def save_feature_maps():
 def save_patch_stats():
     for stat, layer in patch_feature_maps.items():
         for layer_name, layer_maps in layer.items():
+            print('layer size:', layer_maps.shape)
             np.save(f'./saved_data/patch_stats/{layer_name}_patch_{stat}.npy', layer_maps[0][0].cpu().detach().numpy())
 
 
