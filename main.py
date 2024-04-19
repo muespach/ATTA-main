@@ -30,7 +30,7 @@ if __name__ == '__main__':
     }
     last_conv = None
     skip_connection = False
-    patch_size = 10
+    patch_div = [18, 32]
     for name, module in method.named_modules():
         #print("Layer: ", name, " Module: ", module)
         print(name)
@@ -43,7 +43,7 @@ if __name__ == '__main__':
             training_stats['mean'][name] = module.running_mean.cpu().numpy()
             training_stats['var'][name] = module.running_var.cpu().numpy()
             module.register_forward_hook(
-                functools.partial(mymethods.get_patch_stats, layer_name=name, patch_size=patch_size,training_stats=training_stats))
+                functools.partial(mymethods.get_patch_stats, layer_name=name, patch_size=patch_div,training_stats=training_stats))
             # Save the training statistics
             stats = mymethods.save_training_stats(module, name, last_conv)
             batchnorm_stats.append(stats)
