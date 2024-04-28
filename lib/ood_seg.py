@@ -19,6 +19,8 @@ from lib.utils import *
 from lib.utils.metric import *
 from lib.utils.img_utils import Compose, Normalize, ToTensor, Resize, Distortion, ResizeImg, Fog, ColorJitter, GaussianBlur
 import lib.loss as loss
+from lib.network.mynn import PatchNorm2d
+from lib.configs.parse_arg import opt, args
 
 class OOD_Model(object):
     def __init__(self, method):
@@ -274,15 +276,45 @@ class OOD_Model(object):
         self.method.anomaly_score(x)
 
         # Calculate the aggregated discrepancy
-        discrepancy = 0
+        if args.custom_bn:
+            discrepancy = None
+        else:
+            discrepancy = torch.zeros(1, device=torch.device('cuda:0'))
         for i, layer in enumerate(self.method.model.modules()):
             if isinstance(layer, nn.BatchNorm2d):
                 mu_x, var_x = layer.mean, layer.var
                 mu, var = layer.running_mean, layer.running_var
-                # Calculate KL divergence
-                discrepancy = discrepancy + 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - mu) ** 2) / (
-                        var + epsilon) - 1).sum().item()
+                print('feature map mu size:', mu_x.shape)
+                #print('running mu', mu, 'running var', var)
+                # If it's the first iteration where you encounter a matching layer, initialize discrepancy
+                if discrepancy is None:
+                    print('shape mu_X:',mu_x.shape)
+                    B,C,h,w = mu_x.shape
+                    discrepancy = torch.zeros((B,h,w), device=torch.device('cuda:0'))
+                    #print('size discrep:', discrepancy.shape)
 
+                if mu_x.shape != mu.shape:
+                    print('mu_x shape:', mu_x.shape)
+                    expanded_mu = mu.view(1, -1, 1, 1)
+                    expanded_var = var.view(1, -1, 1, 1)
+                    print('extanded mu shape:', expanded_mu.shape)
+                    # Calculate KL divergence
+                    kl = mymethods.kl_divergence_torch(mu_x, var_x, expanded_mu, expanded_var).sum(1)
+                    print('kl size:', kl.shape)
+                    discrepancy += kl
+                    print('size discrep:', discrepancy.shape)
+                    #print('size added kl:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (
+                    #        var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1).shape)
+                    #discrepancy = discrepancy + 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1)
+                    #print('added discrepancy:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) +
+                    #                  (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1))
+                    #print('discrep:', discrepancy)
+                else:
+                    discrepancy = discrepancy + 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (
+                                var_x + (mu_x - mu) ** 2) / (var + epsilon) - 1).sum()
+                    print('discrep:', discrepancy)
+
+                print(f'cumul discrepancy at layer {i}: {discrepancy}')
         # Training Data Stat. (Use function 'save_bn_stats' to obtain for different models).
         if opt.model.backbone == 'WideResNet38':
             train_stat_mean = 825.3230302274227
@@ -292,9 +324,14 @@ class OOD_Model(object):
             train_stat_std = 462.1095033939578
 
         # Normalize KL Divergence to a probability.
+        discrepancy = discrepancy.squeeze()
+        print('discrep shape before norm:', discrepancy.shape)
         normalized_kl_divergence_values = (discrepancy - train_stat_mean) / train_stat_std
-        momentum = sigmoid(beta * (normalized_kl_divergence_values - threshold))
+        momentum = torch.sigmoid(beta * (normalized_kl_divergence_values - threshold))
+        print()
         return momentum
+
+
 
     def save_bn_stats(self):
         self.method.model.train(False)

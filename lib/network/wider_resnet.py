@@ -39,13 +39,18 @@ from functools import partial
 import torch.nn as nn
 import torch
 from . import mynn
+from lib.configs.parse_arg import opt, args
 
 def bnrelu(channels):
     """
     Single Layer BN and Relui
     """
-    return nn.Sequential(mynn.Norm2d(channels),
-                         nn.ReLU(inplace=True))
+    if args.custom_bn:
+        return nn.Sequential(mynn.PatchNorm2d(channels),
+                             nn.ReLU(inplace=True))
+    else:
+        return nn.Sequential(mynn.Norm2d(channels),
+                            nn.ReLU(inplace=True))
 
 class GlobalAvgPool2d(nn.Module):
     """

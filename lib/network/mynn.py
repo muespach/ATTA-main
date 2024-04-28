@@ -4,6 +4,7 @@ Custom Norm wrappers to enable sync BN, regular BN and for weight initialization
 from lib.configs.parse_arg import opt, args
 import torch
 import torch.nn as nn
+import lib.lucas.mymethods as mymethods
 
 # def Norm2d(in_channels):
 #     """
@@ -44,7 +45,9 @@ class Norm2d(nn.BatchNorm2d):
         self.mean, self.var = None, None
 
     def forward(self, input):
-
+        print('forward norm')
+        print("momentum: ", self.momentum)
+        #print('adapt: ', self.adapt)
         self._check_input_dim(input)
 
         self.mean = input.mean([0, 2, 3]).detach()
@@ -99,3 +102,81 @@ class Norm2d(nn.BatchNorm2d):
         if self.affine:
             input = input * self.weight[None, :, None, None] + self.bias[None, :, None, None]
         return input
+
+class PatchNorm2d(nn.BatchNorm2d):
+
+    def __init__(self, num_features, eps=1e-5, momentum=0.1,
+                track_running_stats=True, adapt=False, affine=True, n_patches=[1,1]):
+        super(PatchNorm2d, self).__init__(
+            num_features, eps, momentum, affine, track_running_stats)
+        self.adapt = adapt
+        self.momentum = momentum
+        self.n_patches = n_patches
+        self.mean, self.var = None, None
+
+    def forward(self, input):
+        print('forward PATCHnorm')
+        print("momentum patchnorm: ", self.momentum)
+        # print('adapt: ', self.adapt)
+        self._check_input_dim(input)
+        patches_input = mymethods.fold_to_patches_uniform(input, self.n_patches)
+        print()
+        print('folded to patches')
+        print()
+        B, C, H, W = input.shape
+
+        if self.mean is not None:
+            #print('mean shape avant:', self.mean.shape)
+            #print('running mean shape avant:', self.running_mean.shape)
+            self.mean = self.mean.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            self.var = self.var.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+        else:
+            self.mean, self.var = mymethods.calculate_stats(patches_input)
+            #print('mean shape apres calcul:', self.mean.shape)
+            #print('running mean shape apres calcul:', self.running_mean.shape)
+
+        expanded_running_mean = self.running_mean.view(1, -1, 1, 1, 1, 1).expand_as(self.mean)
+        expanded_running_var = self.running_var.view(1, -1, 1, 1, 1, 1).expand_as(self.var)
+
+        # calculate running estimates
+        if self.training:
+            print("Layer not adapted for training")
+
+        elif self.adapt:
+            #print('running_mean size:', self.running_mean.shape)
+            exponential_average_factor = self.momentum
+            n = input.numel() / input.size(1)
+            with torch.no_grad():
+                mix_means = exponential_average_factor * self.mean \
+                           + (1 - exponential_average_factor) * expanded_running_mean.detach()
+                # update running_var with unbiased var
+                if n != 1:
+                    mix_vars = exponential_average_factor * self.var * n / (n - 1) \
+                              + (1 - exponential_average_factor) * expanded_running_var.detach()
+                else:
+                    mix_vars = exponential_average_factor * self.var \
+                              + (1 - exponential_average_factor) * expanded_running_var.detach()
+            self.mean = mix_means
+            self.var = mix_vars
+
+        #print("Shape of patches_input:", patches_input.shape)
+        #print("Shape of self.mean:", self.mean.shape)
+        #print("Shape of self.var:", self.var.shape)
+
+        print('training? ', self.training, ' adapt?', self.adapt)
+        # Normalize each patch
+        normalized_patches = (patches_input - self.mean) / torch.sqrt(self.var + self.eps)
+
+        # Fold patches back to the original input shape
+        output = normalized_patches.reshape(B, C, H, W)
+
+        # Apply learnable parameters
+        output = output * self.weight[None, :, None, None] + self.bias[None, :, None, None]
+
+        # Remove the redundant dimensions to keep only the mean and var per patch
+        self.mean = self.mean.squeeze(-1).squeeze(-1)
+        self.var = self.var.squeeze(-1).squeeze(-1)
+
+        print('mean shape at the end of patchnorm2d:', self.mean.shape)
+
+        return output

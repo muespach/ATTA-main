@@ -10,6 +10,7 @@ def parse_args(description=''):
     parser.add_argument('--run', help='run function name', type=str, default='inference')
     parser.add_argument('--method', help='OOD Detection method name', type=str, default=None)
     parser.add_argument('--trans_type', help='Choose Added Domain Shift', type=str, default=None)
+    parser.add_argument('--custom_bn', help='Use custom BN method', type=bool, default=False)
     args, rest = parser.parse_known_args()
 
     update_config(args.cfg)
