@@ -4,6 +4,7 @@ from lib.ood_seg import OOD_Model
 from lib.configs.parse_arg import opt, args
 import lib.method_module as method_module
 import lib.lucas.mymethods as mymethods
+from torch import nn
 
 import numpy as np
 import pandas as pd
@@ -34,10 +35,10 @@ if __name__ == '__main__':
     }
     last_conv = None
     skip_connection = False
-    patch_div = [18, 32]
+
     for name, module in method.named_modules():
-        #print("Layer: ", name, " Module: ", module)
         print(name)
+        #print("Layer: ", name, " Module: ", module)
         if name == 'model':
             module.register_forward_hook(mymethods.get_input)
         if "conv1" in name or "conv2" in name or "conv3" in name:
@@ -63,36 +64,6 @@ if __name__ == '__main__':
     #mymethods.save_kl_div()
 
 
-
-
-    ######################
-
-    def get_domainshift_prob(self, x, threshold = 50.0, beta = 0.1, epsilon = 1e-8):
-        # Perform forward propagation
-        self.method.anomaly_score(x)
-
-        # Calculate the aggregated discrepancy
-        discrepancy = 0
-        for i, layer in enumerate(self.method.model.modules()):
-            if isinstance(layer, nn.BatchNorm2d):
-                mu_x, var_x = layer.mean, layer.var
-                mu, var = layer.running_mean, layer.running_var
-                # Calculate KL divergence
-                discrepancy = discrepancy + 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - mu) ** 2) / (
-                        var + epsilon) - 1).sum().item()
-
-        # Training Data Stat. (Use function 'save_bn_stats' to obtain for different models).
-        if opt.model.backbone == 'WideResNet38':
-            train_stat_mean = 825.3230302274227
-            train_stat_std = 131.76657988963967
-        elif opt.model.backbone == 'ResNet101':
-            train_stat_mean = 2428.9796256740888
-            train_stat_std = 462.1095033939578
-
-        # Normalize KL Divergence to a probability.
-        normalized_kl_divergence_values = (discrepancy - train_stat_mean) / train_stat_std
-        momentum = sigmoid(beta * (normalized_kl_divergence_values - threshold))
-        return momentum
 
 
 

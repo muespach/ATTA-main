@@ -286,11 +286,16 @@ class OOD_Model(object):
         for name, layer in self.method.model.named_modules():
             if isinstance(layer, nn.BatchNorm2d):
                 print()
-                print('layer: ', name)
+                print('batchnorm layer: ', name)
                 print()
                 mu_x, var_x = layer.mean, layer.var
-                mu_x = mu_x.view(1, -1, 1, 1)
-                var_x = var_x.view(1, -1, 1, 1)
+                print('recieved mean shape:', mu_x.shape)
+                #mu_x = mu_x.view(1, -1, 1, 1)
+                #var_x = var_x.view(1, -1, 1, 1)
+                if mu_x.dim() == 3:
+                    mu_x = mu_x[None,:,:,:]
+                    var_x = var_x[None,:,:,:]
+                print('rescaled mean shape:', mu_x.shape)
 
                 mu, var = layer.running_mean, layer.running_var
                 print('feature map mu size:', mu_x.shape)
@@ -298,26 +303,18 @@ class OOD_Model(object):
                 # If it's the first iteration where you encounter a matching layer, initialize discrepancy
                 if discrepancy is None:
                     print('shape mu_x:',mu_x.shape)
+                    print('shape running mu:',mu.shape)
                     B,C,h,w = mu_x.shape
                     discrepancy = torch.zeros((B,h,w), device=torch.device('cuda:0'))
                     #print('size discrep:', discrepancy.shape)
 
                 if mu_x.shape != mu.shape:
+                    print('discrep diff sizes')
                     print('mu_x shape:', mu_x.shape)
                     expanded_mu = mu.view(1, -1, 1, 1)
                     expanded_var = var.view(1, -1, 1, 1)
                     print('extanded mu shape:', expanded_mu.shape)
-                    # Calculate KL divergence
-                    #kl = mymethods.kl_divergence_torch(mu_x, var_x, expanded_mu, expanded_var).sum(1)
-                    #print('kl size:', kl.shape)
-                    #discrepancy += kl
-                    #print('size discrep:', discrepancy.shape)
-                    #print('size added kl:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (
-                    #        var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1).shape)
                     discrepancy = discrepancy + 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1)
-                    #print('added discrepancy:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) +
-                    #                  (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1))
-                    #print('discrep:', discrepancy)
                 else:
                     discrepancy = discrepancy + 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (
                                 var_x + (mu_x - mu) ** 2) / (var + epsilon) - 1).sum()
@@ -337,7 +334,7 @@ class OOD_Model(object):
         print('discrep shape before norm:', discrepancy.shape, 'discrep:', discrepancy)
         normalized_kl_divergence_values = (discrepancy - train_stat_mean) / train_stat_std
         momentum = torch.sigmoid(beta * (normalized_kl_divergence_values - threshold))
-        print()
+        print('calculated momentum:', momentum)
         return momentum
 
 

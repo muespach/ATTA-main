@@ -43,18 +43,24 @@ from lib.configs.parse_arg import opt, args
 
 def bnrelu_patch(channels):
     """
-    Single Layer BN and Relui
+    Single Layer BN and Relu
     """
-    #if args.custom_bn:
-    #    return nn.Sequential(mynn.PatchNorm2d(channels),
-    #                         nn.ReLU(inplace=True))
-    #else:
-    return nn.Sequential(mynn.Norm2d(channels,patch_version=True),
-                         nn.ReLU(inplace=True))
+    if args.custom_bn:
+        print('patch norm')
+        return nn.Sequential(mynn.PatchNorm2d(channels),
+                             nn.ReLU(inplace=True))
+    else:
+        return nn.Sequential(mynn.Norm2d(channels),
+                             nn.ReLU(inplace=True))
 
 def bnrelu(channels):
-    return nn.Sequential(mynn.Norm2d(channels),
-                         nn.ReLU(inplace=True))
+    if args.custom_bn:
+        #print('patchnorm')
+        return nn.Sequential(mynn.PatchNorm2d(channels, n_patches=[9,16]),
+                             nn.ReLU(inplace=True))
+    else:
+        return nn.Sequential(mynn.Norm2d(channels),
+                             nn.ReLU(inplace=True))
 
 class GlobalAvgPool2d(nn.Module):
     """
@@ -80,7 +86,7 @@ class IdentityResidualBlock(nn.Module):
                  stride=1,
                  dilation=1,
                  groups=1,
-                 norm_act=None,
+                 norm_act=bnrelu,
                  dropout=None,
                  dist_bn=False
                  ):
@@ -113,9 +119,6 @@ class IdentityResidualBlock(nn.Module):
         """
         super(IdentityResidualBlock, self).__init__()
         self.dist_bn = dist_bn
-
-        if norm_act is None:
-            norm_act = bnrelu_patch if args.custom_bn else bnrelu
 
         # Check if we are using distributed BN and use the nn from encoding.nn
         # library rather than using standard pytorch.nn
