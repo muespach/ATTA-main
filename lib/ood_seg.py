@@ -272,6 +272,9 @@ class OOD_Model(object):
     """
     ################### BN
     def get_domainshift_prob(self, x, threshold = 50.0, beta = 0.1, epsilon = 1e-8):
+        print()
+        print("get ds prob")
+        print()
         # Perform forward propagation
         self.method.anomaly_score(x)
 
@@ -279,16 +282,22 @@ class OOD_Model(object):
         if args.custom_bn:
             discrepancy = None
         else:
-            discrepancy = torch.zeros(1, device=torch.device('cuda:0'))
-        for i, layer in enumerate(self.method.model.modules()):
+            discrepancy = torch.zeros((1,1,1), device=torch.device('cuda:0'))
+        for name, layer in self.method.model.named_modules():
             if isinstance(layer, nn.BatchNorm2d):
+                print()
+                print('layer: ', name)
+                print()
                 mu_x, var_x = layer.mean, layer.var
+                mu_x = mu_x.view(1, -1, 1, 1)
+                var_x = var_x.view(1, -1, 1, 1)
+
                 mu, var = layer.running_mean, layer.running_var
                 print('feature map mu size:', mu_x.shape)
                 #print('running mu', mu, 'running var', var)
                 # If it's the first iteration where you encounter a matching layer, initialize discrepancy
                 if discrepancy is None:
-                    print('shape mu_X:',mu_x.shape)
+                    print('shape mu_x:',mu_x.shape)
                     B,C,h,w = mu_x.shape
                     discrepancy = torch.zeros((B,h,w), device=torch.device('cuda:0'))
                     #print('size discrep:', discrepancy.shape)
@@ -299,13 +308,13 @@ class OOD_Model(object):
                     expanded_var = var.view(1, -1, 1, 1)
                     print('extanded mu shape:', expanded_mu.shape)
                     # Calculate KL divergence
-                    kl = mymethods.kl_divergence_torch(mu_x, var_x, expanded_mu, expanded_var).sum(1)
-                    print('kl size:', kl.shape)
-                    discrepancy += kl
-                    print('size discrep:', discrepancy.shape)
+                    #kl = mymethods.kl_divergence_torch(mu_x, var_x, expanded_mu, expanded_var).sum(1)
+                    #print('kl size:', kl.shape)
+                    #discrepancy += kl
+                    #print('size discrep:', discrepancy.shape)
                     #print('size added kl:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (
                     #        var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1).shape)
-                    #discrepancy = discrepancy + 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1)
+                    discrepancy = discrepancy + 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1)
                     #print('added discrepancy:', 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) +
                     #                  (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1))
                     #print('discrep:', discrepancy)
@@ -314,7 +323,7 @@ class OOD_Model(object):
                                 var_x + (mu_x - mu) ** 2) / (var + epsilon) - 1).sum()
                     print('discrep:', discrepancy)
 
-                print(f'cumul discrepancy at layer {i}: {discrepancy}')
+                print(f'cumul discrepancy at layer {name}: {discrepancy}')
         # Training Data Stat. (Use function 'save_bn_stats' to obtain for different models).
         if opt.model.backbone == 'WideResNet38':
             train_stat_mean = 825.3230302274227
@@ -325,7 +334,7 @@ class OOD_Model(object):
 
         # Normalize KL Divergence to a probability.
         discrepancy = discrepancy.squeeze()
-        print('discrep shape before norm:', discrepancy.shape)
+        print('discrep shape before norm:', discrepancy.shape, 'discrep:', discrepancy)
         normalized_kl_divergence_values = (discrepancy - train_stat_mean) / train_stat_std
         momentum = torch.sigmoid(beta * (normalized_kl_divergence_values - threshold))
         print()

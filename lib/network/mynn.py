@@ -5,6 +5,7 @@ from lib.configs.parse_arg import opt, args
 import torch
 import torch.nn as nn
 import lib.lucas.mymethods as mymethods
+from lib.configs.parse_arg import args
 
 # def Norm2d(in_channels):
 #     """
@@ -37,12 +38,14 @@ def Upsample(x, size):
 class Norm2d(nn.BatchNorm2d):
 
     def __init__(self, num_features, eps=1e-5, momentum=0.1,
-                 affine=True, track_running_stats=True, adapt = False):
+                 affine=True, track_running_stats=True, adapt = False, n_patches=[9,16], patch_version = False):
         super(Norm2d, self).__init__(
             num_features, eps, momentum, affine, track_running_stats)
         self.adapt = adapt
         self.momentum = momentum
         self.mean, self.var = None, None
+        self.n_patches = n_patches
+        self.patch_version = patch_version
 
     def forward(self, input):
         print('forward norm')
@@ -50,9 +53,12 @@ class Norm2d(nn.BatchNorm2d):
         #print('adapt: ', self.adapt)
         self._check_input_dim(input)
 
-        self.mean = input.mean([0, 2, 3]).detach()
-        self.var = input.var([0, 2, 3], unbiased=False).detach()
-
+        print('intput dim:', input.size())
+        if self.patch_version:
+            input_patches = mymethods.fold_to_patches_uniform(input, self.n_patches)
+            self.mean, self.var = mymethods.calculate_stats(input_patches)
+        else:
+            self.mean, self.var = mymethods.calculate_stats(input)
         exponential_average_factor = 0.0
         if self.training and self.track_running_stats:
             if self.num_batches_tracked is not None:
@@ -76,17 +82,20 @@ class Norm2d(nn.BatchNorm2d):
 
         elif self.adapt:
             exponential_average_factor = self.momentum
+            #print('exponential_average_factor:', exponential_average_factor)
+            print('running mean shape:', self.running_mean.shape)
+            print('data mean shape:', self.mean.shape)
             n = input.numel() / input.size(1)
             with torch.no_grad():
                 mix_mean = exponential_average_factor * self.mean \
-                                    + (1 - exponential_average_factor) * self.running_mean.detach()
+                                    + (1 - exponential_average_factor) * self.running_mean[:,None,None].detach()
                 # update running_var with unbiased var
                 if n != 1:
                     mix_var = exponential_average_factor * self.var * n / (n - 1) \
-                                   + (1 - exponential_average_factor) * self.running_var.detach()
+                                   + (1 - exponential_average_factor) * self.running_var[:,None,None].detach()
                 else:
                     mix_var = exponential_average_factor * self.var  \
-                              + (1 - exponential_average_factor) * self.running_var.detach()
+                              + (1 - exponential_average_factor) * self.running_var[:,None,None].detach()
             mean = mix_mean
             var = mix_var
 
@@ -98,10 +107,17 @@ class Norm2d(nn.BatchNorm2d):
                 mean = self.running_mean
                 var = self.running_var
 
-        input = (input - mean[None, :, None, None]) / (torch.sqrt(var[None, :, None, None] + self.eps))
-        if self.affine:
-            input = input * self.weight[None, :, None, None] + self.bias[None, :, None, None]
-        return input
+        if self.patch_version:
+            output = (input_patches - mean[None,:,:,:,None,None])/(torch.sqrt(var[None,:,:,:,None,None] + self.eps))
+            if self.affine:
+                output = output * self.weight[None,:,None,None,None,None] + self.bias[None,:,None,None,None,None]
+            output = output.view_as(input)
+            print('output shape:',output.shape)
+        else:
+            output = (input - mean[None, :, None, None]) / (torch.sqrt(var[None, :, None, None] + self.eps))
+            if self.affine:
+                output = output * self.weight[None, :, None, None] + self.bias[None, :, None, None]
+        return output
 
 class PatchNorm2d(nn.BatchNorm2d):
 
@@ -171,6 +187,8 @@ class PatchNorm2d(nn.BatchNorm2d):
         output = normalized_patches.reshape(B, C, H, W)
 
         # Apply learnable parameters
+        print('weights shape:', self.weights.shape)
+        print('biais shape:', self.bias.shape)
         output = output * self.weight[None, :, None, None] + self.bias[None, :, None, None]
 
         # Remove the redundant dimensions to keep only the mean and var per patch

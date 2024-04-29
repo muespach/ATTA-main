@@ -41,16 +41,20 @@ import torch
 from . import mynn
 from lib.configs.parse_arg import opt, args
 
-def bnrelu(channels):
+def bnrelu_patch(channels):
     """
     Single Layer BN and Relui
     """
-    if args.custom_bn:
-        return nn.Sequential(mynn.PatchNorm2d(channels),
-                             nn.ReLU(inplace=True))
-    else:
-        return nn.Sequential(mynn.Norm2d(channels),
-                            nn.ReLU(inplace=True))
+    #if args.custom_bn:
+    #    return nn.Sequential(mynn.PatchNorm2d(channels),
+    #                         nn.ReLU(inplace=True))
+    #else:
+    return nn.Sequential(mynn.Norm2d(channels,patch_version=True),
+                         nn.ReLU(inplace=True))
+
+def bnrelu(channels):
+    return nn.Sequential(mynn.Norm2d(channels),
+                         nn.ReLU(inplace=True))
 
 class GlobalAvgPool2d(nn.Module):
     """
@@ -76,7 +80,7 @@ class IdentityResidualBlock(nn.Module):
                  stride=1,
                  dilation=1,
                  groups=1,
-                 norm_act=bnrelu,
+                 norm_act=None,
                  dropout=None,
                  dist_bn=False
                  ):
@@ -109,6 +113,9 @@ class IdentityResidualBlock(nn.Module):
         """
         super(IdentityResidualBlock, self).__init__()
         self.dist_bn = dist_bn
+
+        if norm_act is None:
+            norm_act = bnrelu_patch if args.custom_bn else bnrelu
 
         # Check if we are using distributed BN and use the nn from encoding.nn
         # library rather than using standard pytorch.nn

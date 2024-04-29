@@ -62,9 +62,14 @@ def fold_to_patches_uniform(feature_map, patch_division):
     div_w = W // patch_division[1]
     #patches = feature_map.unfold(3, div_h, div_h).unfold(4, div_w, div_w)
     #patches = patches.contiguous()
-    patches = feature_map.unsqueeze(2).expand(-1, -1, patch_division[0], -1, -1)  # Adding divisions1
-    patches = patches.unsqueeze(3).expand(-1, -1, -1, patch_division[1], -1, -1)  # Adding divisions2
+    #patches = feature_map.unsqueeze(2).expand(-1, -1, patch_division[0], -1, -1).detach()  # Adding divisions1
+    #patches = patches.unsqueeze(3).expand(-1, -1, -1, patch_division[1], -1, -1).detach()  # Adding divisions2
+    if div_h<1 or div_w<1:
+        patches = feature_map.view(B,C,H,W,1,1).detach()
+    else:
+        patches = feature_map.view(B, C, patch_division[0], patch_division[1], div_h, div_w).detach()
     print('patches shape:', patches.shape)
+
     # shape of patches at this point: (B, C, H//patch size, W//patch size, patch size, patch size)
     return patches
 
@@ -76,8 +81,8 @@ def calculate_stats(all_patches):
     #    patches_means.append(patches.mean(dim=[3, 4]))  # mean over the patch (squeeze only with B = 1)
     #    patches_var.append(patches.var(dim=[3, 4]))
 
-    patches_means = all_patches.mean(dim=[-1, -2], keepdim=True).detach()  # mean for each patch
-    patches_var = all_patches.var(dim=[-1, -2], keepdim=True, unbiased=False).detach()  # variance for each patch
+    patches_means = all_patches.mean(dim=[0, -1, -2]).detach()  # mean for each patch
+    patches_var = all_patches.var(dim=[0, -1, -2], unbiased=False).detach()  # variance for each patch
     return patches_means, patches_var
 
 
@@ -131,8 +136,8 @@ def kl_divergence_torch(mu_p, var_p, mu_q, var_q):
         raise SystemExit('Negative variance')
 
     # Regularize variance to avoid division by zero
-    var_q_regularized = torch.maximum(var_q, torch.tensor(epsilon))
-    var_p_regularized = torch.maximum(var_p, torch.tensor(epsilon))
+    # var_q_regularized = torch.maximum(var_q, torch.tensor(epsilon))
+    # var_p_regularized = torch.maximum(var_p, torch.tensor(epsilon))
 
     # Compute the KL divergence
     kl_div = 0.5 * (torch.log((var_q + epsilon) / (var_p + epsilon)) + \
@@ -140,7 +145,7 @@ def kl_divergence_torch(mu_p, var_p, mu_q, var_q):
     print('kl_div shape:', kl_div.shape, 'kl_div sum:', kl_div)
     if (kl_div < 0).any():
         print('Error: negative KL divergence detected.')
-        raise SystemExit('Stopping execution due to negative KL divergence.')
+        #raise SystemExit('Stopping execution due to negative KL divergence.')
     return kl_div
 
 
