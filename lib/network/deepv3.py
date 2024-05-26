@@ -29,7 +29,7 @@ from torch import nn
 from . import SEresnext
 from . import Resnet
 from .wider_resnet import wider_resnet38_a2
-from .mynn import initialize_weights, Norm2d, Upsample
+from .mynn import initialize_weights, Norm2d, Upsample, PatchNorm2d
 
 
 class _AtrousSpatialPyramidPoolingModule(nn.Module):
@@ -57,17 +57,19 @@ class _AtrousSpatialPyramidPoolingModule(nn.Module):
         else:
             raise 'output stride of {} not supported'.format(output_stride)
 
+        self.norm = Norm2d
         self.features = []
         # 1x1
         self.features.append(
             nn.Sequential(nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
-                          Norm2d(reduction_dim), nn.ReLU(inplace=True)))
+                          self.norm(reduction_dim), nn.ReLU(inplace=True)))
         # other rates
         for r in rates:
             self.features.append(nn.Sequential(
                 nn.Conv2d(in_dim, reduction_dim, kernel_size=3,
                           dilation=r, padding=r, bias=False),
-                Norm2d(reduction_dim),
+                #Norm2d(reduction_dim),
+                self.norm(reduction_dim),
                 nn.ReLU(inplace=True)
             ))
         self.features = torch.nn.ModuleList(self.features)
@@ -76,7 +78,8 @@ class _AtrousSpatialPyramidPoolingModule(nn.Module):
         self.img_pooling = nn.AdaptiveAvgPool2d(1)
         self.img_conv = nn.Sequential(
             nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
-            Norm2d(reduction_dim), nn.ReLU(inplace=True))
+            self.norm(reduction_dim),
+            nn.ReLU(inplace=True))
 
     def forward(self, x):
         x_size = x.size()
@@ -160,10 +163,12 @@ class DeepV3Plus(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(256 + self.skip_num, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            #Norm2d(256),
+            PatchNorm2d(256, n_patches=[2, 2]),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            PatchNorm2d(256, n_patches=[2, 2]),
+            #Norm2d(256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, num_classes, kernel_size=1, bias=False))
 
@@ -217,15 +222,16 @@ class DeepV3Plus_v2(nn.Module):
         self.variant = variant
         self.skip = skip
         self.skip_num = skip_num
+        self.norm = Norm2d
 
         if trunk == 'resnet-101':  # three 3 X 3
             resnet = Resnet.resnet101_v2(pretrained=False)
             # resnet.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu1,
             #                               resnet.conv2, resnet.bn2, resnet.relu2,
             #                               resnet.conv3, resnet.bn3, resnet.relu3, resnet.maxpool)
-            resnet.layer0 = nn.Sequential(resnet.conv1, Norm2d(64), resnet.relu1,
-                                          resnet.conv2, Norm2d(64), resnet.relu2,
-                                          resnet.conv3, Norm2d(128), resnet.relu3, resnet.maxpool)
+            resnet.layer0 = nn.Sequential(resnet.conv1, self.norm(64), resnet.relu1,
+                                          resnet.conv2, self.norm(64), resnet.relu2,
+                                          resnet.conv3, self.norm(128), resnet.relu3, resnet.maxpool)
         else:
             raise ValueError("Not a valid network arch")
 
@@ -259,20 +265,20 @@ class DeepV3Plus_v2(nn.Module):
 
         self.bot_fine = nn.Sequential(
             nn.Conv2d(256, 48, kernel_size=1, bias=False),
-            Norm2d(48),
+            self.norm(48),
             nn.ReLU())
 
         self.bot_aspp = nn.Sequential(
             nn.Conv2d(1280, 256, kernel_size=1, bias=False),
-            Norm2d(256),
+            self.norm(256),
             nn.ReLU())
 
         self.final1 = nn.Sequential(
             nn.Conv2d(304, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            self.norm(256),
             nn.ReLU(),
             nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            self.norm(256),
             nn.ReLU())
 
         self.final2 = nn.Sequential(
@@ -281,7 +287,7 @@ class DeepV3Plus_v2(nn.Module):
         # This dsn block is not been used. Keep it here to ensure no warning when loading model weights.
         self.dsn = nn.Sequential(
             nn.Conv2d(1024, 512, kernel_size=3, stride=1, padding=1),
-            Norm2d(512),
+            self.norm(512),
             nn.ReLU(),
             nn.Dropout2d(0.1),
             nn.Conv2d(512, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
@@ -344,6 +350,7 @@ class DeepWV3Plus(nn.Module):
 #             print("Please download the ImageNet weights of WideResNet38 in our repo to ./pretrained_models.")
 
         # wide_resnet = wide_resnet.module
+        self.norm = Norm2d
 
         self.mod1 = wide_resnet.mod1
         self.mod2 = wide_resnet.mod2
@@ -364,10 +371,10 @@ class DeepWV3Plus(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(256 + 48, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            self.norm(256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
-            Norm2d(256),
+            self.norm(256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, num_classes, kernel_size=1, bias=False))
 

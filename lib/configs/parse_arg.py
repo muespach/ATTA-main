@@ -11,6 +11,11 @@ def parse_args(description=''):
     parser.add_argument('--method', help='OOD Detection method name', type=str, default=None)
     parser.add_argument('--trans_type', help='Choose Added Domain Shift', type=str, default=None)
     parser.add_argument('--custom_bn', help='Use custom BN method', type=bool, default=False)
+    parser.add_argument('--save_stats', type=bool, default=False)
+    parser.add_argument('--anomalies', type=bool, default=True)
+    parser.add_argument('--save_img', type=bool, default=False)
+    parser.add_argument('--patch_div', type=int, default=1)
+
     args, rest = parser.parse_known_args()
 
     update_config(args.cfg)

@@ -55,8 +55,7 @@ def bnrelu_patch(channels):
 
 def bnrelu(channels):
     if args.custom_bn:
-        #print('patchnorm')
-        return nn.Sequential(mynn.PatchNorm2d(channels, n_patches=[9,16]),
+        return nn.Sequential(mynn.PatchNorm2d(channels, n_patches=[args.patch_div,args.patch_div]),
                              nn.ReLU(inplace=True))
     else:
         return nn.Sequential(mynn.Norm2d(channels),

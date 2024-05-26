@@ -46,12 +46,12 @@ class Norm2d(nn.BatchNorm2d):
         self.mean, self.var = None, None
 
     def forward(self, input):
-        print('forward norm')
-        print("momentum: ", self.momentum)
+        #print('forward norm')
+        #print("momentum Norm2d: ", self.momentum)
         #print('adapt: ', self.adapt)
         self._check_input_dim(input)
 
-        print('intput dim:', input.size())
+        #print('intput dim:', input.size())
         self.mean, self.var = mymethods.calculate_stats(input)
         exponential_average_factor = 0.0
         if self.training and self.track_running_stats:
@@ -80,18 +80,19 @@ class Norm2d(nn.BatchNorm2d):
                 if self.momentum.dim() > 1:
                     exponential_average_factor = self.momentum.mean().detach()
 
-            print('exponential_average_factor:', exponential_average_factor, 'type:', type(exponential_average_factor))
-            print('running mean shape:', self.running_mean.shape)
-            print('data mean shape:', self.mean.shape)
+            #('exponential_average_factor:', exponential_average_factor, 'type:', type(exponential_average_factor))
+            #print('running mean shape:', self.running_mean.shape)
+            #print('data mean shape:', self.mean.shape)
+
+            print()
+            print('running mean:', self.running_mean.detach().sum())
+            print('running var:', self.running_var.detach().sum())
+            print('layer mean:', self.mean.sum())
+            print('layer var:', self.var.sum())
+            print('momentum:', self.momentum)
+
             n = input.numel() / input.size(1)
             with torch.no_grad():
-                print()
-                print()
-                print('exponential_average_factor shape:', exponential_average_factor)
-                print('mean shape:', self.mean.shape)
-                print('running mean shape:', self.running_mean.shape)
-                print()
-                print()
                 mix_mean = exponential_average_factor * self.mean \
                                     + (1 - exponential_average_factor) * self.running_mean.detach()
                 # update running_var with unbiased var
@@ -104,6 +105,10 @@ class Norm2d(nn.BatchNorm2d):
             mean = mix_mean
             var = mix_var
 
+            print('mean for normalization (summed over channels):', mean.sum())
+            print('var for normalization:', var.sum())
+            print()
+
         else: # test
             if self.running_mean is None:
                 mean = self.mean
@@ -112,9 +117,6 @@ class Norm2d(nn.BatchNorm2d):
                 mean = self.running_mean
                 var = self.running_var
 
-        print('mean shape:', mean.shape)
-        print('var shape:', var.shape)
-        print('input shape:', input.shape)
         output = (input - mean[None, :, None, None]) / (torch.sqrt(var[None, :, None, None] + self.eps))
         if self.affine:
             output = output * self.weight[None, :, None, None] + self.bias[None, :, None, None]
@@ -123,7 +125,7 @@ class Norm2d(nn.BatchNorm2d):
 class PatchNorm2d(nn.BatchNorm2d):
 
     def __init__(self, num_features, eps=1e-5, momentum=0.1,
-                 affine=True, track_running_stats=True, adapt=False, n_patches=[1, 1], patch_version=False):
+                 affine=True, track_running_stats=True, adapt=False, n_patches=[2, 2], patch_version=False):
         super(PatchNorm2d, self).__init__(
             num_features, eps, momentum, affine, track_running_stats)
         self.adapt = adapt
@@ -136,15 +138,14 @@ class PatchNorm2d(nn.BatchNorm2d):
         print()
         print('PATCHNORM')
         print()
-        print("momentum: ", self.momentum)
+        #print("momentum: ", self.momentum)
         # print('adapt: ', self.adapt)
         self._check_input_dim(input)
 
-        print('intput dim:', input.size())
+        #print('intput dim:', input.size())
 
         input_patches = mymethods.fold_to_patches_uniform(input, self.n_patches)
         self.mean, self.var = mymethods.calculate_stats(input_patches)
-        print('')
 
         exponential_average_factor = 0.0
         if self.training and self.track_running_stats:
@@ -169,14 +170,18 @@ class PatchNorm2d(nn.BatchNorm2d):
 
         elif self.adapt:
             exponential_average_factor = self.momentum
-            print()
-            print()
-            print('exponential_average_factor shape:', exponential_average_factor)
-            print('mean shape:', self.mean.shape)
-            print('running mean shape:', self.running_mean.shape)
-            print()
-            print()
+            if type(exponential_average_factor) is not float:
+                if self.mean.shape[-2:] != exponential_average_factor.shape:
+                    exponential_average_factor = exponential_average_factor.view(self.mean.shape[-2:])
             n = input.numel() / input.size(1)
+
+            print()
+            print('running mean:', self.running_mean.detach().sum())
+            print('running var:', self.running_var.detach().sum())
+            print('patch layer original mean:', self.mean.sum(dim=0))
+            print('patch layer original var:', self.var.sum(dim=0))
+            print('momentum:', self.momentum)
+
             with torch.no_grad():
                 mix_mean = exponential_average_factor * self.mean \
                            + (1 - exponential_average_factor) * self.running_mean[:,None,None].detach()
@@ -190,6 +195,13 @@ class PatchNorm2d(nn.BatchNorm2d):
             mean = mix_mean
             var = mix_var
 
+            print('mean for normalization:', mean.sum())
+            print('var for normalization:', var.sum())
+            print()
+
+            #stats_visualizer = [self.momentum, self.running_mean.sum(), self.running_var.sum(), self.mean.sum(), self.var.sum()]
+            #print(stats_visualizer)
+
         else:  # test
             if self.running_mean is None:
                 mean = self.mean
@@ -202,10 +214,9 @@ class PatchNorm2d(nn.BatchNorm2d):
                   torch.sqrt(var[None, :, :, :, None, None] + self.eps))
         if self.affine:
             output = output * self.weight[None, :, None, None, None, None] + self.bias[None, :, None, None, None, None]
-        print('output shape before rescale:', output.shape)
         output = output.view_as(input)
-        print('output shape:', output.shape)
-        print('final self.mean:', self.mean.shape)
-        print('final self.var:', self.var.shape)
+        #print('output shape:', output.shape)
+        #print('final self.mean:', self.mean.shape)
+        #print('final self.var:', self.var.shape)
 
         return output

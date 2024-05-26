@@ -21,6 +21,9 @@ from lib.utils.img_utils import Compose, Normalize, ToTensor, Resize, Distortion
 import lib.loss as loss
 from lib.network.mynn import PatchNorm2d
 from lib.configs.parse_arg import opt, args
+import json
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class OOD_Model(object):
     def __init__(self, method):
@@ -169,7 +172,7 @@ class OOD_Model(object):
     Main functions for test time adaptation.
     """
 
-    def atta(self, img, ret_logit =False):
+    def atta(self, img, i, ret_logit =False):
         # We use Episodic Training Manner by default.
         if opt.train.episodic:
             self.method.model.load_state_dict(self.initial_model_state)
@@ -178,7 +181,8 @@ class OOD_Model(object):
 
         # 1. Selective Bacth Normalization
         with torch.no_grad():
-            ds_prob = self.get_domainshift_prob(img)
+            ds_prob = self.get_domainshift_prob(img, i)
+            #self.set_sbn_momentum(momentum=ds_prob)
             self.set_sbn_momentum(momentum=ds_prob)
 
         # 2. Anomaly-aware Self-Training
@@ -191,10 +195,17 @@ class OOD_Model(object):
 
         # Forward to get the final output.
         with torch.no_grad():
+            # Define the folder where you want to save the logit tensor
+            save_folder = './saved_data/logit_tensors'
+            save_path = os.path.join(save_folder, 'logit_tensor.pt')
+            os.makedirs(save_folder, exist_ok=True)
+
             # Since only the final block params are updated, we only need to recalculate for this block.
             feature = self.method.model.module.final(self.method.model.module.dec0)
             logit = Upsample(feature, img.size()[2:])
             anomaly_score = self.method.getscore_from_logit(logit)
+
+            torch.save(logit, save_path)
 
         if ret_logit:
             return anomaly_score, logit
@@ -224,9 +235,9 @@ class OOD_Model(object):
         ood_gts_list = []
 
         for (i,data) in tqdm(enumerate(self.data_loaders['test'])):
-            img, target = data[0].cuda(), data[1].numpy()
+            img, target = data[0].to(device), data[1].numpy()
             if opt.train.tta == 'atta':
-                anomaly_score = self.atta(img)
+                anomaly_score = self.atta(img,i)
             elif opt.train.tta == 'tent':
                 anomaly_score = self.tent(img)
             else:
@@ -235,6 +246,16 @@ class OOD_Model(object):
             #self.calculate_metrcis(target, anomaly_npy, i) # Uncomment this for debuggging.
             ood_gts_list.append(target)
             anomaly_score_list.append(anomaly_npy)
+
+        # Convert lists to numpy arrays
+        ood_gts_array = np.array(ood_gts_list)
+        anomaly_score_array = np.array(anomaly_score_list)
+
+        # Save the arrays as .npy files
+        save_folder = f'./saved_data/anomaly_results/{args.dataset}/{args.patch_div}_{args.patch_div}/'
+
+        np.save(os.path.join(save_folder, 'ood_gts_list.npy'), ood_gts_array)
+        np.save(os.path.join(save_folder, 'anomaly_score_list.npy'), anomaly_score_array)
 
         roc_auc, prc_auc, fpr95 = eval_ood_measure(np.array(anomaly_score_list), np.array(ood_gts_list))
         logging.warning(f'AUROC score for {args.dataset}: {roc_auc:.2%}')
@@ -250,7 +271,7 @@ class OOD_Model(object):
         all_results = []
         with torch.no_grad():
             for (i,data) in tqdm(enumerate(self.data_loaders['test'])):
-                img, ood_gts, target = data[0].cuda(), data[1].long(), data[2].long()
+                img, ood_gts, target = data[0].to(device), data[1].long(), data[2].long()
                 outputs = self.method.anomaly_score(img, ret_logit = True)[1]
                 pred = outputs.argmax(1).detach().cpu().numpy()
                 ood_gts = ood_gts.numpy()
@@ -263,6 +284,10 @@ class OOD_Model(object):
                 results_dict = {'hist': hist_tmp, 'labeled': labeled_tmp, 'correct': correct_tmp}
                 all_results.append(results_dict)
         m_iou, m_acc = compute_metric(all_results)
+
+        with open(f'./saved_data/predictions/{args.dataset}/all_results.json', 'w') as file:
+            json.dump(all_results, file)
+
         logging.warning("current mIoU is {}, mAcc is {}".format(m_iou, m_acc))
         return
 
@@ -271,10 +296,50 @@ class OOD_Model(object):
     Functions related to BN-based domain shift detection.
     """
     ################### BN
-    def get_domainshift_prob(self, x, threshold = 50.0, beta = 0.1, epsilon = 1e-8):
-        print()
-        print("get ds prob")
-        print()
+    def get_domainshift_prob(self, x, i, threshold = 50.0, beta = 0.1, epsilon = 1e-8):
+        if args.save_img:
+            if args.trans_type == 'fog':
+                img_folder = f'./saved_data/input_images/{args.dataset}/fog'
+            else:
+                img_folder = f'./saved_data/input_images/{args.dataset}/no_fog'
+            os.makedirs(img_folder, exist_ok=True)
+            torch.save(x,f'{img_folder}/image{i}.pth')
+
+        if args.anomalies:
+            if args.custom_bn:
+                if args.trans_type == 'fog':
+                    kl_folder = f'./saved_data/kl/{args.dataset}/patch/anomalies/fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/patch/anomalies/fog'
+                else:
+                    kl_folder = f'./saved_data/kl/{args.dataset}/patch/anomalies/no_fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/patch/anomalies/no_fog'
+            else:
+                if args.trans_type == 'fog':
+                    kl_folder = f'./saved_data/kl/{args.dataset}/global/anomalies/fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/global/anomalies/fog'
+                else:
+                    kl_folder = f'./saved_data/kl/{args.dataset}/global/anomalies/no_fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/global/anomalies/no_fog'
+        else:
+            if args.custom_bn:
+                if args.trans_type == 'fog':
+                    kl_folder = f'./saved_data/kl/{args.dataset}/patch/no_anomalies/fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/patch/no_anomalies/fog'
+                else:
+                    kl_folder = f'./saved_data/kl/{args.dataset}/patch/no_anomalies/no_fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/patch/no_anomalies/no_fog'
+            else:
+                if args.trans_type == 'fog':
+                    kl_folder = f'./saved_data/kl/{args.dataset}/global/no_anomalies/fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/global/no_anomalies/fog'
+                else:
+                    kl_folder = f'./saved_data/kl/{args.dataset}/global/no_anomalies/no_fog'
+                    proba_folder = f'./saved_data/probabilities/{args.dataset}/global/no_anomalies/no_fog'
+
+        # Create the directories if they do not exist
+        os.makedirs(kl_folder, exist_ok=True)
+        os.makedirs(proba_folder, exist_ok=True)
+
         # Perform forward propagation
         self.method.anomaly_score(x)
 
@@ -282,44 +347,39 @@ class OOD_Model(object):
         if args.custom_bn:
             discrepancy = None
         else:
-            discrepancy = torch.zeros((1,1,1), device=torch.device('cuda:0'))
+            discrepancy = torch.zeros((1,1,1), device=device)
         for name, layer in self.method.model.named_modules():
             if isinstance(layer, nn.BatchNorm2d):
-                print()
                 print('batchnorm layer: ', name)
-                print()
                 mu_x, var_x = layer.mean, layer.var
-                print('recieved mean shape:', mu_x.shape)
-                #mu_x = mu_x.view(1, -1, 1, 1)
-                #var_x = var_x.view(1, -1, 1, 1)
+
                 if mu_x.dim() == 3:
                     mu_x = mu_x[None,:,:,:]
                     var_x = var_x[None,:,:,:]
-                print('rescaled mean shape:', mu_x.shape)
 
                 mu, var = layer.running_mean, layer.running_var
-                print('feature map mu size:', mu_x.shape)
-                #print('running mu', mu, 'running var', var)
+
                 # If it's the first iteration where you encounter a matching layer, initialize discrepancy
                 if discrepancy is None:
-                    print('shape mu_x:',mu_x.shape)
-                    print('shape running mu:',mu.shape)
                     B,C,h,w = mu_x.shape
-                    discrepancy = torch.zeros((B,h,w), device=torch.device('cuda:0'))
+                    discrepancy = torch.zeros((B,h,w), device=device)
                     #print('size discrep:', discrepancy.shape)
 
                 if mu_x.shape != mu.shape:
-                    print('discrep diff sizes')
-                    print('mu_x shape:', mu_x.shape)
+                    #print('discrep diff sizes')
                     expanded_mu = mu.view(1, -1, 1, 1)
                     expanded_var = var.view(1, -1, 1, 1)
-                    print('extanded mu shape:', expanded_mu.shape)
                     discrepancy = discrepancy + 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1)
+                    kl_elem = 0.5 * (torch.log((expanded_var + epsilon) / (var_x + epsilon)) + (var_x + (mu_x - expanded_mu) ** 2) / (expanded_var + epsilon) - 1).sum(dim=1)
                 else:
                     discrepancy = discrepancy + 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (
                                 var_x + (mu_x - mu) ** 2) / (var + epsilon) - 1).sum()
-                    print('discrep:', discrepancy)
-
+                    kl_elem = 0.5 * (torch.log((var + epsilon) / (var_x + epsilon)) + (
+                                var_x + (mu_x - mu) ** 2) / (var + epsilon) - 1).sum()
+                    #print('discrep:', discrepancy)
+                print('added kl:', kl_elem)
+                if args.save_stats:
+                    torch.save(kl_elem,f'{kl_folder}/kl_{name}_img{i}.pth')
                 print(f'cumul discrepancy at layer {name}: {discrepancy}')
         # Training Data Stat. (Use function 'save_bn_stats' to obtain for different models).
         if opt.model.backbone == 'WideResNet38':
@@ -331,10 +391,19 @@ class OOD_Model(object):
 
         # Normalize KL Divergence to a probability.
         discrepancy = discrepancy.squeeze()
-        print('discrep shape before norm:', discrepancy.shape, 'discrep:', discrepancy)
+        #print('discrep shape before norm:', discrepancy.shape, 'discrep:', discrepancy)
         normalized_kl_divergence_values = (discrepancy - train_stat_mean) / train_stat_std
+        if args.save_stats:
+            save_dir = f'{proba_folder}_before_sigmoid/8_16'
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(normalized_kl_divergence_values,f'{save_dir}/momentum_img{i}.pth')
+        print('before sig:', normalized_kl_divergence_values)
         momentum = torch.sigmoid(beta * (normalized_kl_divergence_values - threshold))
+        #momentum = torch.sigmoid(normalized_kl_divergence_values)
+        #momentum = torch.tensor(0)
         print('calculated momentum:', momentum)
+        #if args.save_stats:
+        #    torch.save(momentum,f'{proba_folder}/proba_img{i}.pth')
         return momentum
 
 
@@ -345,7 +414,7 @@ class OOD_Model(object):
 
         with torch.no_grad():
             for data in tqdm(self.data_loaders['test']):
-                img, target = data[0].cuda(), data[1].cuda().long()
+                img, target = data[0].to(device), data[1].to(device).long()
                 self.method.anomaly_score(img)
                 discrepancy = 0
                 for i, layer in enumerate(self.method.model.modules()):

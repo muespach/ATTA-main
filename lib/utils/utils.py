@@ -8,14 +8,16 @@ from collections import OrderedDict
 from pathlib import Path
 import wget
 from lib.network.deepv3 import DeepWV3Plus, DeepR101V3PlusD_OS8_v2
-from lib.lucas import mymethods
+from lib.configs.parse_arg import args
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def random_init(seed=0):
     cudnn.deterministic = True
     cudnn.benchmark = False
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     random.seed(seed)
     np.random.seed(seed)
 
@@ -75,15 +77,15 @@ def build_model(backbone, class_num=19, parallel=True, weight_path=None):
         if not weight_path:
             weight_path = '../pretrained_model/DeepLabV3+_WideResNet38_baseline.pth'
         # Use data parallel by default.
-        if parallel:
+        if parallel and torch.cuda.is_available():
             model = nn.DataParallel(model)
         # Load state dict.
-        state_dict = torch.load(weight_path)
+        state_dict = torch.load(weight_path, map_location=device)
         if 'state_dict' in state_dict.keys():
             state_dict = state_dict['state_dict']
         error_message = model.load_state_dict(state_dict, strict=False)
         print(error_message)
-        model = model.cuda()
+        model = model.to(device)
         return model
 
     elif backbone == 'ResNet101':
@@ -91,15 +93,15 @@ def build_model(backbone, class_num=19, parallel=True, weight_path=None):
         if not weight_path:
             weight_path = '../pretrained_model/r101_os8_base_cty.pth'
         # Use data parallel by default.
-        if parallel:
+        if parallel and torch.cuda.is_available():
             model = nn.DataParallel(model)
         # Load state dict.
-        state_dict = torch.load(weight_path)
+        state_dict = torch.load(weight_path, map_location=device)
         if 'state_dict' in state_dict.keys():
             state_dict = state_dict['state_dict']
         error_message = model.load_state_dict(state_dict, strict=False)
         print(error_message)
-        model = model.cuda()
+        model = model.to(device)
         return model
     else:
         return None
@@ -115,10 +117,10 @@ def build_pebal_model(backbone, class_num=19, parallel=True, weight_path=None):
         model = None
 
     # Load state dict.
-    state_dict = torch.load(weight_path)
+    state_dict = torch.load(weight_path, map_location=device)
     state_dict = state_dict['model']
 
-    # Remove "branck" in the name.
+    # Remove "branch" in the name.
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
         name = k.split('branch1.')[-1]
@@ -128,14 +130,12 @@ def build_pebal_model(backbone, class_num=19, parallel=True, weight_path=None):
     print(error_message)
 
     # Use data parallel by default.
-    if parallel:
+    if parallel and torch.cuda.is_available():
         model = nn.DataParallel(model)
 
-    model = model.cuda()
+    model = model.to(device)
 
     return model
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
-
-
