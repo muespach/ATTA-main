@@ -253,7 +253,8 @@ class OOD_Model(object):
 
         # Save the arrays as .npy files
         save_folder = f'./saved_data/anomaly_results/{args.dataset}/{args.patch_div}_{args.patch_div}/'
-
+        os.makedirs(save_folder, exist_ok=True)
+        
         np.save(os.path.join(save_folder, 'ood_gts_list.npy'), ood_gts_array)
         np.save(os.path.join(save_folder, 'anomaly_score_list.npy'), anomaly_score_array)
 
